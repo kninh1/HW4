@@ -1,28 +1,311 @@
 ---
-title: ""
-author: ""
+title: "Assignment4"
+author: "Katrina Ninh"
 format:
   html:
     embed-resources: true
 ---
 
-## Quarto
+##Assignment 04 - HPC and SQL
 
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
 
-## Running Code
+The learning objectives are to write faster code for computational task requiring a loop and to implement some queries and basic data wrangling in SQL.
 
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+HPC
+Make things run faster
+Rewrite the following R functions to make them faster. It is OK (and recommended) to take a look at StackOverflow and Google
+
+
+##Question 1
+Using the dataset generated below (dat), check that the output of both of your new functions matches the output of the original functions. Then use microbenchmark to check that your version is actually faster.
 
 ```{r}
-1 + 1
+
+# Total row sums
+fun1 <- function(mat) {
+  n <- nrow(mat)
+  ans <- double(n) 
+  for (i in 1:n) {
+    ans[i] <- sum(mat[i, ])
+  }
+  ans
+}
+
+fun1alt <- function(mat) {
+  # YOUR CODE HERE
+  rowSums(mat)
+}
+
+# Cumulative sum by row
+fun2 <- function(mat) {
+  n <- nrow(mat)
+  k <- ncol(mat)
+  ans <- mat
+  for (i in 1:n) {
+    for (j in 2:k) {
+      ans[i,j] <- mat[i, j] + ans[i, j - 1]
+    }
+  }
+  ans
+}
+
+fun2alt <- function(mat) {
+  # YOUR CODE HERE
+  ans <- mat
+  for (i in 1:nrow(mat)) {
+    ans[i, 2:ncol(mat)] <- cumsum(mat[i, 2:ncol(mat)])
+  }
+  ans  
+}
+
+##----------------------------------------------------------
+
+# Use the data with this code
+set.seed(2315)
+dat <- matrix(rnorm(200 * 100), nrow = 200)
+
+fun1Result <- fun1(dat)
+fun1ResultAlt <- fun1alt(dat)
+fun2Result <- fun2(dat)
+fun2ResultAlt <- fun2alt(dat)
+
+head(fun1Result)
+head(fun1ResultAlt)
+head(fun2Result)
+head(fun2ResultAlt)
+
+# Test for the first
+microbenchmark::microbenchmark(
+  fun1(dat),
+  fun1alt(dat), unit = "relative"
+)
+
+# Test for the second
+microbenchmark::microbenchmark(
+  fun2(dat),
+  fun2alt(dat), unit = "relative"
+)
+
 ```
 
-You can add options to executable code like this
+##Question 2
+Rewrite the previous code using parLapply() (or your parallelization method of choice) to parallelize it. Run the code once, using system.time(), to show that your version is faster.
+
+##Make things run faster with parallel computing
+The following function allows simulating pi:
+
 
 ```{r}
-#| echo: false
-2 * 2
+
+library(parallel)
+
+sim_pi <- function(n = 1000, i = NULL) {
+  p <- matrix(runif(n*2), ncol = 2)
+  mean(rowSums(p^2) < 1) * 4
+}
+
+# Here is an example of the run
+set.seed(156)
+sim_pi(1000) # 3.132
+
+##In order to get accurate estimates, we can run this function multiple times, with the following code:
+
+# This runs the simulation a 4,000 times, each with 10,000 points
+set.seed(1231)
+
+system.time({
+  ans <- unlist(lapply(1:4000, sim_pi, n = 10000))
+  print(mean(ans))
+})
+
+# YOUR CODE HERE
+system.time({
+
+  cl <- makeCluster(detectCores())
+  clusterEvalQ(cl, library(lme4))
+  
+  ans <- unlist(parLapply(cl, 1:4000, sim_pi, n = 10000))
+  
+  stopCluster(cl)
+  
+  # Print the mean
+  print(mean(ans))
+  
+})
+
+
+
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
+
+
+
+##==================================================================================================
+
+##SQL
+Setup a temporary database by running the following chunk
+
+```{r}
+
+# install.packages(c("RSQLite", "DBI"))
+
+library(RSQLite)
+library(DBI)
+
+# Initialize a temporary in memory database
+con <- dbConnect(SQLite(), ":memory:")
+
+# Download tables
+
+if (!file.exists("film"))
+  download.file(
+    url = "https://raw.githubusercontent.com/ivanceras/sakila/master/csv-sakila-db/film.csv",
+    destfile = "film.csv",
+    method   = "libcurl",
+    timeout  = 60
+    )
+film <- read.csv("film.csv")
+
+if (!file.exists("film_category"))
+  download.file(
+    url = "https://raw.githubusercontent.com/ivanceras/sakila/master/csv-sakila-db/film_category.csv",
+    destfile = "film_category.csv",
+    method   = "libcurl",
+    timeout  = 60
+    )
+film_category <- read.csv("film_category.csv")
+
+if (!file.exists("category"))
+  download.file(
+    url = "https://raw.githubusercontent.com/ivanceras/sakila/master/csv-sakila-db/film_category.csv",
+    destfile = "category.csv",
+    method   = "libcurl",
+    timeout  = 60
+    )
+category <- read.csv("category.csv")
+
+
+# Copy data.frames to database
+dbWriteTable(con, "film", film)
+dbWriteTable(con, "film_category", film_category)
+dbWriteTable(con, "category", category)
+
+dbListTables(con)
+
+## List columns
+dbGetQuery(con, "SELECT * FROM film where 0 = 1")
+dbGetQuery(con, "SELECT * FROM film_category  where 0 = 1")
+dbGetQuery(con, "SELECT * FROM category  where 0 = 1")
+
+## Inspect data
+dbGetQuery(con, "SELECT * FROM film LIMIT 5;")
+dbGetQuery(con, "SELECT * FROM film_category LIMIT 5;")
+dbGetQuery(con, "SELECT * FROM category LIMIT 5;")
+
+##When you write a new chunk, remember to replace the r with sql, connection=con. Some of these questions will require you ##to use an inner join. Read more about them here https://www.w3schools.com/sql/sql_join_inner.asp
+
+
+```
+
+
+Question 3
+How many many movies are available in each rating category?
+
+```{r}
+
+##dbGetQuery(con, "SELECT DISTINCT rating FROM film order by rating")
+
+dbGetQuery(con, "SELECT rating, count(*) FROM film GROUP BY rating")
+
+
+```
+
+
+Question 4
+What is the average replacement cost and rental rate for each rating category?
+
+```{r}
+
+dbGetQuery(con, "SELECT rating, AVG(replacement_cost), AVG(rental_rate) FROM film GROUP BY rating")
+
+
+```
+
+
+
+Question 5
+Use table film_category together with film to find how many films there are with each category ID.
+
+```{r}
+
+dbGetQuery(con, 
+          "SELECT x1.category_id, count(*)
+           FROM
+           (
+              SELECT t2.category_id, t2.film_id
+               FROM film t1
+                JOIN film_category t2
+                  ON t1.film_id = t2.film_id
+           ) x1
+           GROUP BY x1.category_id
+           ORDER BY count(*) DESC
+          "
+)
+
+## As we can see from the next query, we don't need the film table to get the count.
+dbGetQuery(con, 
+           "
+            SELECT category_id, count(*)
+            FROM film_category
+            GROUP BY category_id
+            ORDER BY count(*) DESC
+           ")
+
+```
+
+
+Question 6
+Incorporate the category table into the answer to the previous question to find the name of the most popular category.
+
+```{r}
+
+print("As of 11/11/2023, the category table does NOT have a category_name.  If it were to have a category_name then the query to get the most popular category would be as follow:")
+
+
+##dbGetQuery(con, 
+##           "
+##            SELECT X1.category_id, X1.movie_count, X1.category_name
+##            FROM
+##            (
+##                SELECT category_id, count(*) as movie_count
+##                FROM film_category
+##                GROUP BY category_id
+##                ORDER BY count(*) DESC
+##            ) X1
+##            JOIN category C1
+##            ON C1.X1.category_id = X1.category_id
+##            LIMIT 1;
+##           ")
+
+```
+
+##Answer to Question 6
+
+As of 11/16/2023, the category table does NOT have a category_name.  If it were to have a category_name then the query to get the most popular category would be as follow:
+
+dbGetQuery(con, 
+           "
+            SELECT /*X1.category_name, */ X1.category_id, X1.movie_count
+            FROM
+            (
+                SELECT category_id, count(*) as movie_count
+                FROM film_category
+                GROUP BY category_id
+                ORDER BY count(*) DESC
+            ) X1
+            JOIN category C1
+            ON C1.X1.category_id = X1.category_id
+            LIMIT 1;
+           ")
+           
+           
